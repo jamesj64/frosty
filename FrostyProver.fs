@@ -97,6 +97,24 @@ module FrostyProver =
             printProof tail
         | _ -> ()
 
+    //make this better
+    let splitToMultipleMessages (str: string) =
+        let strs = List.ofArray (str.Split("\n"))
+        let mutable messages = []
+        let mutable currentMessage = ""
+        List.iteri (fun x (y: string) ->
+            if currentMessage.Length + y.Length <= 2000 then 
+                currentMessage <- currentMessage + "\n" + y
+                if x = strs.Length - 1 then
+                    messages <- messages @ [currentMessage]
+            elif y.Length > 2000 then
+                failwith "Proof too long to send"
+            else
+                messages <- messages @ [currentMessage]
+                currentMessage <- y) strs
+        messages
+
+
     let stringifyProof (proof: Line list) =
         let maxLineDigits = numDigits proof.Length
         let rec mainStringProof (proof: Line list) =

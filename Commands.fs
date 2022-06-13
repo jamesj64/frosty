@@ -12,6 +12,18 @@ open DSharpPlus.Exceptions
 open DSharpPlus.CommandsNext
 open FrostyProver
 
+module CommandHelpers =
+    let rec sendMultiple (ctx: CommandContext, messages: string list) (isFirst: bool)= async {
+        match messages with
+        | head :: tail ->
+            if isFirst then
+                do! ctx.RespondAsync(head) |> Async.AwaitTask |> Async.Ignore
+            else
+                do! ctx.Channel.SendMessageAsync(head) |> Async.AwaitTask |> Async.Ignore
+            do! sendMultiple (ctx,tail) false |> Async.Ignore
+        | _ -> ()
+    }
+
 type FrostyCommands() =
 
     inherit BaseCommandModule ()
@@ -29,7 +41,11 @@ type FrostyCommands() =
     member private self.format (ctx: CommandContext, formula: string) = async {
         do! ctx.TriggerTypingAsync() |> Async.AwaitTask
         try
-            do! ctx.RespondAsync((splitPremisesChar >> prettyPrintMany) formula) |> Async.AwaitTask |> Async.Ignore
+            let response = (splitPremisesChar >> prettyPrintMany) formula
+            if response.Length <= 2000 then
+                do! ctx.RespondAsync(response) |> Async.AwaitTask |> Async.Ignore
+            else
+                do! ctx.RespondAsync("Output too long to send.") |> Async.AwaitTask |> Async.Ignore
         with
             _ -> do! ctx.RespondAsync("Could not parse input.") |> Async.AwaitTask |> Async.Ignore
     }
@@ -37,13 +53,14 @@ type FrostyCommands() =
     [<Command("format"); Description("Formats formula")>]
     member public self.formatAsync (ctx: CommandContext, [<Description "Formula or list of formulas separated by line break to format"; RemainingText>] formula: string) =
         self.format(ctx, formula) |> Async.StartAsTask :> Task
-    
+
     member private self.prove (ctx: CommandContext, formula: string) = async {
         do! ctx.TriggerTypingAsync() |> Async.AwaitTask
         try
             let response = (splitPremisesChar >> firstAndLast >> (fun (x,y) -> prove y x)) formula
             if response.Length > 2000 then
-                do! ctx.RespondAsync("Valid. Proof too long to send.") |> Async.AwaitTask |> Async.Ignore
+                let multipleMessages = splitToMultipleMessages response
+                do! CommandHelpers.sendMultiple (ctx, multipleMessages) true |> Async.Ignore
             else
                 do! ctx.RespondAsync(response) |> Async.AwaitTask |> Async.Ignore
         with
